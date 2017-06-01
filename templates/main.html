@@ -1,0 +1,25 @@
+{% autoescape None %}
+<html>
+
+<body>
+    <form action="/" method="post">
+        <input type="text" name="content" value="{{keyword}}" />
+        <input type="submit" value="{{explorer}}" />
+    </form>
+    <br/>
+    <form action="/config" method="post">
+        <p>
+            <textarea name="domains" style="width:300px;height:150px">{{domains}}</textarea>
+        </p>
+        <p>
+            <input type="hidden" name="enhanced" value="0" />
+            <input type="checkbox" name="enhanced" value="1" id="enhanced" {% if enhanced %}checked{% end %}>Enhanced Mode</input>
+        </p>
+        <p>
+            <input type="submit" value="{{config}}" />
+        </p>
+    </form>
+    <br/> {{result}}
+</body>
+
+</html>
