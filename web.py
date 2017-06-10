@@ -18,6 +18,15 @@ CONST_STRING = {
 }
 
 LANGUAGE = 0
+DEBUG = False
+
+
+def log(message):
+    '''
+     print log if DEBUG flag is on
+    '''
+    if DEBUG:
+        print message
 
 
 def get_render_param(*args, **kwargs):
@@ -72,7 +81,7 @@ BODY_BEGIN = '<body>'
 BODY_END = '</body>'
 
 DOMAINS = []  # todo: put it in database, per user
-RELATIVE_PARTTEN = re.compile(r'["\'](/[\w\-\.]*)+["\']')
+RELATIVE_PARTTEN = re.compile(r"=[\"'](/[^/].+?)+?[\"']")
 
 
 def insert_string(src, input, pos):
@@ -85,7 +94,7 @@ def insert_string(src, input, pos):
 GOOGLE_PARTTEN = re.compile(r'"/url\?q=.+?"')
 
 
-def forward(url, root):
+def forward(url, root, post_arguments={}):
     '''
     forward origin url request
     '''
@@ -93,21 +102,28 @@ def forward(url, root):
         if 'http' not in url:
             url = 'http://' + url   # todo: support https
         uri = urlparse(url)
-        resp = requests.get(url)
+        headers = requests.utils.default_headers()
+        headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)'
+                                      ' Chrome/58.0.3029.110 Safari/537.36'})
+        if not post_arguments:
+            resp = requests.get(url, headers=headers)
+        else:
+            resp = requests.post(url, data=post_arguments, headers=headers)
+
         if resp.ok:
             content = resp.content
             if 'text/html' in resp.headers['Content-Type']:
                 for relative in RELATIVE_PARTTEN.finditer(content):
                     match = relative.group()
-                    replace = insert_string(match, 'http://{}/{}'.format(root, uri.netloc.encode(resp.encoding)), 1)
-                    print 'relative match:{} -> {}'.format(match, replace)
+                    replace = insert_string(match, 'http://{}/{}'.format(root, uri.netloc.encode(resp.encoding)), 2)
+                    log('relative match:{} -> {}'.format(match, replace))
                     content = content.replace(match, replace)
                 for domain in DOMAINS:
                     absolute_partten = re.compile(r'[\'"](https?:)?//([\w\-]+\.)*{}/?.*?["\']'.format(domain.replace('.', r'\.')))
                     for absolute in absolute_partten.finditer(content):
                         match = absolute.group()
                         replace = match[:1] + 'http://{}/{}'.format(root, match[match.find('//') + 2:])
-                        print 'absolute match:{} -> {}'.format(match, replace)
+                        log('absolute match:{} -> {}'.format(match, replace))
                         content = content.replace(match, replace)
                 if 'google' in url:  # special case for google search result
                     for href in GOOGLE_PARTTEN.finditer(content):
@@ -124,6 +140,7 @@ def forward(url, root):
 
 ENHANCED = False
 ACTIVES = {}
+
 
 class MainHandler(BaseHandler):
     '''
@@ -180,6 +197,7 @@ class WildcardHandler(BaseHandler):
     '''
     handle other request
     '''
+
     def _process(self):
         '''
         process wildcard request
@@ -192,7 +210,8 @@ class WildcardHandler(BaseHandler):
             uri = ACTIVES[user] + self.request.uri
         else:
             uri = self.request.uri[1:]
-        okey, result, headers = forward(uri, self.request.headers.get('Host'))
+        okey, result, headers = forward(uri, self.request.headers.get('Host'),
+                                        self.request.body_arguments if self.request.method == 'POST' else {})
         if okey:
             self.set_header('Content-Type', headers['Content-Type'])
             self.write(result)
@@ -201,12 +220,14 @@ class WildcardHandler(BaseHandler):
 
     @tornado.web.authenticated
     def post(self, *args, **kwargs):
-        print 'Wildcard:{}'.format(self.request.arguments)
+        log('post wildcard:{}'.format(self.request.uri))
         self._process()
 
     @tornado.web.authenticated
     def get(self, *args, **kwargs):
+        log('get wildcard:{}'.format(self.request.uri))
         self._process()
+
 
 URL_PATTERN = [
     (r'/', MainHandler),
@@ -234,14 +255,28 @@ def main_loop(port):
         tornado.ioloop.IOLoop.instance().stop()
 
 
-if __name__ == '__main__':
-    PORT = 80
+def main():
+    '''
+    main entry
+    '''
+    port = 80
+    global DEBUG
     try:
-        if len(sys.argv) == 2:
-            PORT = int(sys.argv[1])
-            if PORT > 65535:
-                raise ValueError('port number too large')
+        if len(sys.argv) >= 2:
+            if sys.argv[1] == 'debug':
+                DEBUG = True
+            else:
+                port = int(sys.argv[1])
+                if port > 65535:
+                    raise ValueError('port number too large')
 
-        main_loop(PORT)
+            if len(sys.argv) == 3 and sys.argv[2] == 'debug':
+                DEBUG = True
+
+        main_loop(port)
     except ValueError:
-        print '"{}" can not use as a port.'.format(PORT)
+        print '"{}" can not use as a port.'.format(port)
+
+
+if __name__ == '__main__':
+    main()
